@@ -1,0 +1,37 @@
+﻿╤ЄЁєъЄєЁр яряюъ
+╤хЁшщэ√щ эюьхЁ Єюьр: 1295-9CC5
+C:.
+|   .env
+|   docker-compose.yml
+|   go.mod
+|   go.sum
+|   Makefile
+|   README.md
+|   structure-utf8.txt
+|   structure.txt
+|   test_db.go
+|   
++---cmd
+|   +---api
+|   |       main.go
+|   |       
+|   \---worker
+|           main.go
+|           
++---internal
+|   +---adapters
+|   |   +---kafka
+|   |   |       kafka.go
+|   |   |       
+|   |   \---postgres
+|   |           postgres.go
+|   |           
+|   +---domain
+|   |       order.go
+|   |       
+|   \---repository
+|           order_repository.go
+|           
+\---migrations
+        0001_init.up.sql
+        
