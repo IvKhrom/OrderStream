@@ -6,17 +6,23 @@ import (
 )
 
 type OrderEvent struct {
-	EventID    string          `json:"event_id"`    // "0"=create, ">0"=update_id
-	OrderID    string          `json:"order_id"`    // Internal order ID
-	ExternalID string          `json:"external_id"` // External order ID
-	UserID     string          `json:"user_id"`     // User ID for security
+	// Поле EventID удалено: тип события определяется по `status` или по значению `order_id` в запросе.
+	OrderID    string          `json:"order_id"`    // Внутренний идентификатор заказа (UUID)
+	ExternalID string          `json:"external_id"` // Внешний идентификатор заказа (от маркетплейса)
+	UserID     string          `json:"user_id"`     // Идентификатор пользователя (для проверки прав)
 	Payload    json.RawMessage `json:"payload,omitempty"`
-	Status     string          `json:"status"` // new, processing, done, cancelled
-	Timestamp  time.Time       `json:"timestamp"`
+	// Возможные значения статуса:
+	// - "new" — создан, требует обработки (worker должен выполнить создание);
+	// - "processing" — в процессе обработки;
+	// - "done" — обработан успешно;
+	// - "cancelled" — заказ отменён (бизнес-статус, может требовать дополнительной очистки);
+	// - "deleted" — мягкое удаление записи (soft-delete), административный статус.
+	Status    string    `json:"status"` // new, processing, done, cancelled, deleted
+	Timestamp time.Time `json:"timestamp"`
 }
 
 type OrderAck struct {
-	EventID     string    `json:"event_id"`
+	// EventID удалён; ACK содержит внутренний `order_id` для сопоставления
 	OrderID     string    `json:"order_id"`
 	Status      string    `json:"status"`
 	ProcessedAt time.Time `json:"processed_at"`

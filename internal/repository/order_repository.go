@@ -1,3 +1,4 @@
+//go:generate mockery --name OrderRepository --output ../mocks --outpkg mocks
 package repository
 
 import (
@@ -11,6 +12,7 @@ type OrderRepository interface {
 	Create(ctx context.Context, o *domain.Order) error
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.Order, error)
 	GetByExternalID(ctx context.Context, externalID string, userID uuid.UUID) (*domain.Order, error)
+	Update(ctx context.Context, o *domain.Order) error
 	UpdateStatus(ctx context.Context, id string, status string) error
 	DeleteOrder(ctx context.Context, id string) error
 }

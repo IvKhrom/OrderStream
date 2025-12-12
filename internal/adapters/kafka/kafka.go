@@ -31,7 +31,7 @@ func (p *Producer) Close() error {
 	return p.w.Close()
 }
 
-// PublishRaw publishes message without creating writer object
+// PublishRaw публикует сообщение, создавая временный writer (без постоянного объекта Writer)
 func PublishRaw(ctx context.Context, brokers []string, topic string, value []byte) error {
 	w := kafka.NewWriter(kafka.WriterConfig{
 		Brokers: brokers,
@@ -41,7 +41,7 @@ func PublishRaw(ctx context.Context, brokers []string, topic string, value []byt
 	return w.WriteMessages(ctx, kafka.Message{Value: value})
 }
 
-// Consumer helper
+// Обёртка для Consumer
 type Consumer struct {
 	r *kafka.Reader
 }
