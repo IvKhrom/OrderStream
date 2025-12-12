@@ -9,7 +9,6 @@ import (
 
 //go:generate mockery --name RedisClient --output ../mocks --outpkg mocks --case underscore
 
-// RedisClient is an interface to allow mocking redis client in tests.
 type RedisClient interface {
 	Set(ctx context.Context, key string, value interface{}, ttl time.Duration) *rdb.StatusCmd
 	Get(ctx context.Context, key string) *rdb.StringCmd
