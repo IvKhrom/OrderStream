@@ -1,9 +1,0 @@
-# mockery configuration for generating mocks into internal/mocks
-output: "internal/mocks"
-outpkg: "mocks"
-all: false
-quiet: true
-
-# Example of how to run:
-# go install github.com/vektra/mockery/v2@latest
-# go generate ./...

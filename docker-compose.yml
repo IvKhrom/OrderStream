@@ -44,7 +44,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: cmd/api/Dockerfile
+      dockerfile: cmd/api_service/Dockerfile
     depends_on: [postgres, kafka, redis]
     environment:
       - POSTGRES_DSN=postgres://postgres:upvel123@postgres:5432/orderstream?sslmode=disable

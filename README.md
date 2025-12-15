@@ -5,19 +5,20 @@
 **Кратко:** API записывает заказ в БД и публикует событие в Kafka; Worker обрабатывает событие, обновляет статус заказа и публикует ACK — API при необходимости ожидает ACK перед ответом клиенту.
 
 **Компоненты**
-- **API:** HTTP-сервис ([cmd/api](cmd/api)) — валидация, запись в БД, публикация событий, ожидание ACK.
+- **API:** API-сервис ([cmd/api_service](cmd/api_service)) — принимает запрос, пишет заказ в БД, публикует событие и (опционально) ждёт ACK.
 - **Worker:** фоновый обработчик ([cmd/worker](cmd/worker)) — читает `orders.events`, обрабатывает, обновляет Postgres и публикует ACK в `orders.ack`.
 - **Postgres:** таблица `orders` с хеш-партиционированием на 4 партиции (см. `migrations`).
 - **Kafka:** топики `orders.events` и `orders.ack`.
-- **Redis:** опциональный кэш ([internal/adapters/redis/redis.go](internal/adapters/redis/redis.go)).
+- **Redis:** опциональный кэш (в текущей версии не используется).
 
 **Где смотреть код**
-- Точка входа API: [cmd/api/main.go](cmd/api/main.go)
+- Точка входа API: [cmd/api_service/main.go](cmd/api_service/main.go)
 - Точка входа Worker: [cmd/worker/main.go](cmd/worker/main.go)
-- HTTP-маршруты: [internal/api/router.go](internal/api/router.go)
-- Конфигурация загрузки: [internal/config/config.go](internal/config/config.go)
-- Репозиторный интерфейс: [internal/repository/order_repository.go](internal/repository/order_repository.go)
-- Адаптеры: [internal/adapters](internal/adapters)
+- API контракт: [api/orders_api/orders.proto](api/orders_api/orders.proto)
+- Реализация API: [internal/api/orders_service_api](internal/api/orders_service_api)
+- Конфигурация загрузки: [config/config.go](config/config.go)
+- Сервисный слой: [internal/services/ordersService](internal/services/ordersService)
+- Работа с данными (Postgres): [internal/storage/pgstorage](internal/storage/pgstorage)
 - Миграции: [migrations](migrations)
 
 **Быстрый старт (локально с Docker Compose)**
@@ -34,7 +35,7 @@ docker compose up -d --build
 
 ```powershell
 docker compose stop api
-cd cmd/api
+cd cmd/api_service
 go run .
 
 # в другом терминале
@@ -50,13 +51,13 @@ make run-worker
 ```
 
 **Переменные окружения (важные)**
-- `POSTGRES_DSN` — DSN для Postgres (по умолчанию указан в `internal/config/config.go`).
+- `POSTGRES_DSN` — DSN для Postgres (по умолчанию без пароля указан в `internal/config/config.go`).
 - `KAFKA_BROKERS` — адрес брокера Kafka (например, `localhost:9092`).
 - `API_PORT` — порт API (по умолчанию `8080`).
 - `WORKER_GROUP` — consumer group для Worker.
 - `REDIS_ADDR` — адрес Redis.
 
-Файл с загрузкой переменных: [internal/config/config.go](internal/config/config.go).
+Файл с загрузкой переменных: [config/config.go](config/config.go).
 
 **Миграции**
 - Файлы миграций находятся в папке `migrations/`.
@@ -107,12 +108,7 @@ docker exec -it <postgres_container> psql -U postgres -d orderstream -f /tmp/000
 
 **Тесты и моки**
 - Запуск тестов: `go test ./... -v`.
-- Для генерации моков используется `mockery` (в репозитории `go:generate` директивы в интерфейсах). Пример:
-
-```powershell
-go install github.com/vektra/mockery/v2@latest
-go generate ./...
-```
+ 
 
 **Возможное развитие**
 - Добавить CI (GitHub Actions): `go generate`, `go test -cover` и публикация coverage.

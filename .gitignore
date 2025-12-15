@@ -1,12 +1,39 @@
-venv/
-__pycache__/
-*.pyc
-*.pyo
-*.sqlite3
-.env
-*.log
-*.pot
-*.mo
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+*.prof
+*.coverprofile
+cover.out
+cover
+bin/
+dist/
+
+# Go workspace
+vendor/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Env (секреты/локальные настройки)
+.env
+config/.env
+
+# Docker
+.docker/
+
+# Temporary
 *.swp
-*.pt
+*.tmp
