@@ -1,116 +1,119 @@
 # OrderStream
 
-Небольшой учебный микросервис для обработки заказов в event-driven архитектуре: HTTP API (`orders`) + Worker, использующие PostgreSQL (партиционирование), Kafka (events + ACK) и Redis (кэш).
+Учебный микросервис обработки заказов в event-driven архитектуре:
 
-**Кратко:** API записывает заказ в БД и публикует событие в Kafka; Worker обрабатывает событие, обновляет статус заказа и публикует ACK — API при необходимости ожидает ACK перед ответом клиенту.
+- **API** принимает HTTP-запросы, сохраняет заказ в PostgreSQL и публикует событие в Kafka (`orders.events`)
+- **Worker** читает события из Kafka, обновляет данные в PostgreSQL и публикует ACK в Kafka (`orders.ack`)
+- **API** читает ACK из Kafka и может дождаться подтверждения обработки
 
-**Компоненты**
-- **API:** API-сервис ([cmd/api_service](cmd/api_service)) — принимает запрос, пишет заказ в БД, публикует событие и (опционально) ждёт ACK.
-- **Worker:** фоновый обработчик ([cmd/worker](cmd/worker)) — читает `orders.events`, обрабатывает, обновляет Postgres и публикует ACK в `orders.ack`.
-- **Postgres:** таблица `orders` с хеш-партиционированием на 4 партиции (см. `migrations`).
-- **Kafka:** топики `orders.events` и `orders.ack`.
-- **Redis:** опциональный кэш (в текущей версии не используется).
+## Компоненты
 
-**Где смотреть код**
-- Точка входа API: [cmd/api_service/main.go](cmd/api_service/main.go)
-- Точка входа Worker: [cmd/worker/main.go](cmd/worker/main.go)
-- API контракт: [api/orders_api/orders.proto](api/orders_api/orders.proto)
-- Реализация API: [internal/api/orders_service_api](internal/api/orders_service_api)
-- Конфигурация загрузки: [config/config.go](config/config.go)
-- Сервисный слой: [internal/services/ordersService](internal/services/ordersService)
-- Работа с данными (Postgres): [internal/storage/pgstorage](internal/storage/pgstorage)
-- Миграции: [migrations](migrations)
+- **API**: `cmd/api_service`
+- **Worker**: `cmd/worker`
+- **Контракт API**: `api/orders_api/orders.proto`
+- **API реализация**: `internal/api/orders_service_api`
+- **Сервисный слой**: `internal/services/ordersService`
+- **PostgreSQL storage**: `internal/storage/pgstorage`
+- **Kafka publisher**: `internal/storage/kafkastorage`
+- **Миграции**: `migrations`
 
-**Быстрый старт (локально с Docker Compose)**
+## Быстрый старт (Docker Compose)
 
-1. Поднимите инфраструктуру и сервисы:
+Поднять инфраструктуру и сервисы:
 
 ```powershell
 docker compose up -d --build
 ```
 
-2. API будет доступен по `http://localhost:8080`.
+Что откроется:
 
-3. Остановить/перезапустить только API (если нужно запускать локально через `go run`):
+- **API**: `http://localhost:8080`
+- **Kafka UI**: `http://localhost:8081`
+- **Postgres UI (Adminer)**: `http://localhost:8082`
 
-```powershell
-docker compose stop api
-cd cmd/api_service
-go run .
-
-# в другом терминале
-cd cmd/worker
-go run .
-```
-
-Или используйте Makefile-цели:
+Если нужно пересоздать Postgres “с нуля” (volume + миграции):
 
 ```powershell
-make run-api
-make run-worker
+docker compose down -v
+docker compose up -d --build
 ```
 
-**Переменные окружения (важные)**
-- `POSTGRES_DSN` — DSN для Postgres (по умолчанию без пароля указан в `internal/config/config.go`).
-- `KAFKA_BROKERS` — адрес брокера Kafka (например, `localhost:9092`).
-- `API_PORT` — порт API (по умолчанию `8080`).
-- `WORKER_GROUP` — consumer group для Worker.
-- `REDIS_ADDR` — адрес Redis.
+## Переменные окружения
 
-Файл с загрузкой переменных: [config/config.go](config/config.go).
+Загрузка переменных описана в `config/config.go`. Основные:
 
-**Миграции**
-- Файлы миграций находятся в папке `migrations/`.
-- `0001_init.up.sql` — создание таблицы `orders` и партиций.
-- `0002_remove_external_id.up.sql` — удаление устаревшего столбца `external_id` (и индекса).
+- `POSTGRES_DSN`
+- `KAFKA_BROKERS`
+- `API_PORT`
+- `WORKER_GROUP`
 
-Пример применения миграции вручную (в контейнере Postgres):
+## HTTP API
+
+- `GET /health` → `{ "status": "ok" }`
+
+- `POST /orders` — создать/обновить/soft-delete.
+  - Создание: `order_id` пустой или `"0"`
+  - Soft-delete: `"status": "deleted"`
+  - `payload` можно передавать объектом — сервер сам сериализует в строку `payload_json`
+
+- `GET /orders/{order_id}` — получить заказ по внутреннему UUID
+- `GET /orders/by-external/{external_id}?user_id=<uuid>` — поиск по внешнему id (берётся из `payload->>'id'`)
+
+## Топики Kafka
+
+- `orders.events` — события заказов от API к Worker
+- `orders.ack` — подтверждения (ACK) от Worker к API
+
+## Проверка данных в Postgres (Adminer)
+
+Adminer: `http://localhost:8082`
+
+- System: `PostgreSQL`
+- Server: `postgres`
+- Username: `postgres`
+- Password: `upvel123`
+- Database: `orderstream`
+
+
+## Тесты, моки, покрытие
+
+Моки генерируются `mockery` по конфигу `.mockery.yaml` и лежат в `internal/services/ordersService/mocks`.
+
+Установить mockery:
 
 ```powershell
-docker cp migrations/0001_init.up.sql <postgres_container>:/tmp/0001_init.up.sql
-docker exec -it <postgres_container> psql -U postgres -d orderstream -f /tmp/0001_init.up.sql
+go install github.com/vektra/mockery/v2@latest
 ```
 
-**HTTP API**
+Сгенерировать моки:
 
-- `GET /health` — возвращает `ok`.
-
-- `POST /orders` — создание / обновление / soft-delete.
-  - Тело запроса (пример создания):
-
-```json
-{
-  "order_id": "0",
-  "user_id": "<uuid>",
-  "payload": { "id": "external-123", "items": [...] }
-}
+```powershell
+make mock
 ```
 
-  - Правила:
-    - `order_id` пустой или `"0"` — создаётся новый внутренний `order_id` (UUID).
-    - Для обновления указывайте внутренний `order_id` (UUID).
-    - Soft-delete: укажите `"status": "deleted"` — запись помечается `deleted`.
+Запуск тестов:
 
-  - Ответы:
-    - `201 Created` при создании: `{ "order_id": "<uuid>", "status": "created" }`.
-    - `200 OK` при успешном обновлении: `{ "order_id": "<uuid>", "status": "updated" }`.
-    - `200 OK` при удалении: `{ "status": "deleted" }`.
-    - `409 Conflict` при попытке обновить уже удалённый заказ.
+```powershell
+go test ./... -count=1
+```
 
-- `GET /orders/{id}` — получить заказ по внутреннему `order_id` (UUID).
+Покрытие:
 
-- `GET /orders/by-external/{external}?user_id=<uuid>` — поиск по внешнему marketplace id, которое берётся из `payload->>'id'`.
+```powershell
+go test ./... -count=1 -coverprofile=cover.out
+go tool cover -func=cover.out
+```
 
-**Поток обработки (упрощённо)**
-- Клиент -> POST /orders -> API записывает заказ и публикует событие в `orders.events`.
-- Worker читает `orders.events`, обрабатывает заказ, обновляет Postgres и публикует ACK в `orders.ack`.
-- API, при включённом ack-consumer, ждёт ACK и только после этого возвращает результат клиенту.
+Проверка 100% покрытия по конкретным файлам сервисного слоя:
 
-**Тесты и моки**
-- Запуск тестов: `go test ./... -v`.
- 
+```powershell
+# собрать профиль покрытия только для пакета сервисного слоя
+go test ./internal/services/ordersService -count=1 -coverprofile=cover
 
-**Возможное развитие**
-- Добавить CI (GitHub Actions): `go generate`, `go test -cover` и публикация coverage.
-- Добавить интеграционные тесты с помощью Testcontainers / docker-compose для проверки взаимодействия с Kafka/Postgres/Redis.
-- В production учесть безопасное хранение секретов (не хранить пароли в `docker-compose.yml`).
+# вывести процент по файлу upsert_order.go
+go tool cover -func cover > cover.func.txt
+Select-String -Path cover.func.txt -Pattern "internal/services/ordersService/upsert_order.go" -SimpleMatch
+
+# вывести процент по файлу get_order_by_external_id.go
+Select-String -Path cover.func.txt -Pattern "internal/services/ordersService/get_order_by_external_id.go" -SimpleMatch
+```

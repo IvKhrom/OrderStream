@@ -4,219 +4,357 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
-
 	"github.com/ivkhr/orderstream/internal/models"
+	"github.com/ivkhr/orderstream/internal/services/ordersService/mocks"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/suite"
+	"gotest.tools/v3/assert"
 )
 
-type memStorage struct {
-	mu     sync.Mutex
-	orders map[uuid.UUID]*models.Order
+type OrdersServiceUpsertSuite struct {
+	suite.Suite
+
+	ctx context.Context
+
+	storage *mocks.MockOrdersStorage
+	pub     *mocks.MockOrdersEventsPublisher
+	ackReg  *mocks.MockAckWaitRegistry
 }
 
-func newMemStorage() *memStorage {
-	return &memStorage{orders: make(map[uuid.UUID]*models.Order)}
+func (s *OrdersServiceUpsertSuite) SetupTest() {
+	s.ctx = context.Background()
+	s.storage = mocks.NewMockOrdersStorage(s.T())
+	s.pub = mocks.NewMockOrdersEventsPublisher(s.T())
+	s.ackReg = mocks.NewMockAckWaitRegistry(s.T())
 }
 
-func (m *memStorage) Create(ctx context.Context, o *models.Order) error {
-	_ = ctx
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.orders[o.OrderID] = o
-	return nil
-}
-func (m *memStorage) GetByID(ctx context.Context, id uuid.UUID) (*models.Order, error) {
-	_ = ctx
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if o, ok := m.orders[id]; ok {
-		clone := *o
-		return &clone, nil
-	}
-	return nil, ErrNotFound
-}
-func (m *memStorage) GetByExternalID(ctx context.Context, externalID string, userID uuid.UUID) (*models.Order, error) {
-	_ = ctx
-	_ = externalID
-	_ = userID
-	return nil, ErrNotFound
-}
-func (m *memStorage) Update(ctx context.Context, o *models.Order) error {
-	_ = ctx
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.orders[o.OrderID] = o
-	return nil
-}
-func (m *memStorage) UpdateStatus(ctx context.Context, id string, status string) error {
-	_ = ctx
-	_ = id
-	_ = status
-	return nil
-}
-func (m *memStorage) DeleteOrder(ctx context.Context, id string) error {
-	_ = ctx
-	uid, err := uuid.Parse(id)
-	if err != nil {
-		return err
-	}
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if o, ok := m.orders[uid]; ok {
-		o.Status = "deleted"
-	}
-	return nil
+func (s *OrdersServiceUpsertSuite) newSvc(ack AckWaitRegistry, timeout time.Duration) *OrdersService {
+	return NewOrdersService(s.storage, s.pub, ack, timeout)
 }
 
-type stubPublisher struct {
-	onPublish func(value []byte)
-	retErr    error
-}
-
-func (p *stubPublisher) Publish(ctx context.Context, value []byte) error {
-	_ = ctx
-	if p.onPublish != nil {
-		p.onPublish(value)
-	}
-	return p.retErr
-}
-
-func TestOrdersService_UpsertOrder_Create_WaitsAck(t *testing.T) {
-	st := newMemStorage()
-	reg := NewAckRegistry()
-
-	pub := &stubPublisher{
-		onPublish: func(value []byte) {
-			var ev models.OrderEvent
-			_ = json.Unmarshal(value, &ev)
-			reg.Notify(ev.OrderID)
-		},
-	}
-
-	svc := NewOrdersService(st, pub, reg, 2*time.Second)
+func (s *OrdersServiceUpsertSuite) TestCreate_NoAck_Success() {
+	svc := s.newSvc(nil, 0)
 
 	userID := uuid.New()
 	payload := json.RawMessage(`{"id":"ext-1","items":[1]}`)
 
-	orderID, status, err := svc.UpsertOrder(context.Background(), "0", userID, "", payload)
-	if err != nil {
-		t.Fatalf("unexpected err: %v", err)
-	}
-	if orderID == "" {
-		t.Fatalf("expected orderID")
-	}
-	if status != "created" {
-		t.Fatalf("expected status=created, got %q", status)
-	}
+	s.storage.EXPECT().
+		Create(s.ctx, mock.Anything).
+		Run(func(_ context.Context, ord *models.Order) {
+			assert.Equal(s.T(), userID, ord.UserID)
+			assert.Equal(s.T(), "new", ord.Status)
+			assert.DeepEqual(s.T(), payload, ord.Payload)
+			assert.Check(s.T(), ord.OrderID != uuid.Nil)
+			assert.Check(s.T(), ord.Bucket >= 0 && ord.Bucket < 4)
+		}).
+		Return(nil)
+
+	s.pub.EXPECT().
+		Publish(s.ctx, mock.Anything).
+		Return(nil)
+
+	gotID, gotStatus, err := svc.UpsertOrder(s.ctx, "0", userID, "", payload)
+	assert.NilError(s.T(), err)
+	assert.Check(s.T(), gotID != "")
+	assert.Equal(s.T(), "created", gotStatus)
 }
 
-func TestOrdersService_UpsertOrder_Update(t *testing.T) {
-	st := newMemStorage()
-	svc := NewOrdersService(st, &stubPublisher{}, nil, 0)
+func (s *OrdersServiceUpsertSuite) TestCreate_StorageError() {
+	svc := s.newSvc(nil, 0)
 
-	userID := uuid.New()
+	s.storage.EXPECT().
+		Create(s.ctx, mock.Anything).
+		Return(errors.New("db error"))
+
+	_, _, err := svc.UpsertOrder(s.ctx, "0", uuid.New(), "", json.RawMessage(`{}`))
+	assert.Check(s.T(), err != nil)
+}
+
+func (s *OrdersServiceUpsertSuite) TestCreate_PublishError() {
+	svc := s.newSvc(nil, 0)
+
+	s.storage.EXPECT().
+		Create(s.ctx, mock.Anything).
+		Return(nil)
+
+	wantErr := errors.New("kafka error")
+	s.pub.EXPECT().
+		Publish(s.ctx, mock.Anything).
+		Return(wantErr)
+
+	_, _, err := svc.UpsertOrder(s.ctx, "0", uuid.New(), "", json.RawMessage(`{}`))
+	assert.ErrorIs(s.T(), err, wantErr)
+}
+
+func (s *OrdersServiceUpsertSuite) TestCreate_WaitAck_Success() {
+	ch := make(chan struct{}, 1)
+	cleanupCalled := false
+	cleanup := func() { cleanupCalled = true }
+
+	s.ackReg.EXPECT().
+		Register(mock.Anything).
+		Return((<-chan struct{})(ch), cleanup)
+
+	s.storage.EXPECT().
+		Create(s.ctx, mock.Anything).
+		Return(nil)
+
+	s.pub.EXPECT().
+		Publish(s.ctx, mock.Anything).
+		Run(func(_ context.Context, _ []byte) { ch <- struct{}{} }).
+		Return(nil)
+
+	svc := s.newSvc(s.ackReg, 2*time.Second)
+	_, _, err := svc.UpsertOrder(s.ctx, "0", uuid.New(), "", json.RawMessage(`{"id":"ext"}`))
+	assert.NilError(s.T(), err)
+	assert.Check(s.T(), cleanupCalled)
+}
+
+func (s *OrdersServiceUpsertSuite) TestCreate_WaitAck_Timeout() {
+	ch := make(chan struct{}, 1)
+	cleanup := func() {}
+
+	s.ackReg.EXPECT().
+		Register(mock.Anything).
+		Return((<-chan struct{})(ch), cleanup)
+
+	s.storage.EXPECT().
+		Create(s.ctx, mock.Anything).
+		Return(nil)
+
+	s.pub.EXPECT().
+		Publish(s.ctx, mock.Anything).
+		Return(nil)
+
+	svc := s.newSvc(s.ackReg, 5*time.Millisecond)
+	_, _, err := svc.UpsertOrder(s.ctx, "0", uuid.New(), "", json.RawMessage(`{}`))
+	assert.ErrorIs(s.T(), err, context.DeadlineExceeded)
+}
+
+func (s *OrdersServiceUpsertSuite) TestCreate_WaitAck_CtxCanceled() {
+	ch := make(chan struct{}, 1)
+	cleanup := func() {}
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	s.ackReg.EXPECT().
+		Register(mock.Anything).
+		Return((<-chan struct{})(ch), cleanup)
+
+	s.storage.EXPECT().
+		Create(mock.Anything, mock.Anything).
+		Return(nil)
+
+	s.pub.EXPECT().
+		Publish(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ []byte) { cancel() }).
+		Return(nil)
+
+	svc := s.newSvc(s.ackReg, 2*time.Second)
+	_, _, err := svc.UpsertOrder(ctx, "0", uuid.New(), "", json.RawMessage(`{}`))
+	assert.ErrorIs(s.T(), err, context.Canceled)
+}
+
+func (s *OrdersServiceUpsertSuite) TestUpdate_InvalidOrderID() {
+	svc := s.newSvc(nil, 0)
+	_, _, err := svc.UpsertOrder(s.ctx, "bad-uuid", uuid.New(), "", json.RawMessage(`{}`))
+	assert.Check(s.T(), err != nil)
+}
+
+func (s *OrdersServiceUpsertSuite) TestUpdate_NotFound() {
+	svc := s.newSvc(nil, 0)
 	oid := uuid.New()
-	_ = st.Create(context.Background(), &models.Order{
-		OrderID:   oid,
-		UserID:    userID,
-		Status:    "new",
-		Payload:   json.RawMessage(`{"id":"ext"}`),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	})
 
-	newPayload := json.RawMessage(`{"id":"ext","x":1}`)
-	gotID, gotStatus, err := svc.UpsertOrder(context.Background(), oid.String(), userID, "", newPayload)
-	if err != nil {
-		t.Fatalf("неожиданная ошибка: %v", err)
-	}
-	if gotID != oid.String() || gotStatus != "updated" {
-		t.Fatalf("ожидали updated для %s, получили %s/%s", oid.String(), gotID, gotStatus)
-	}
+	s.storage.EXPECT().
+		GetByID(s.ctx, oid).
+		Return((*models.Order)(nil), errors.New("db: not found"))
+
+	_, _, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "", json.RawMessage(`{}`))
+	assert.ErrorIs(s.T(), err, ErrNotFound)
 }
 
-func TestOrdersService_UpsertOrder_Delete(t *testing.T) {
-	st := newMemStorage()
-	svc := NewOrdersService(st, &stubPublisher{}, nil, 0)
-
-	userID := uuid.New()
+func (s *OrdersServiceUpsertSuite) TestUpdate_DeletedConflict() {
+	svc := s.newSvc(nil, 0)
 	oid := uuid.New()
-	_ = st.Create(context.Background(), &models.Order{
-		OrderID:   oid,
-		UserID:    userID,
-		Status:    "new",
-		Payload:   json.RawMessage(`{"id":"ext"}`),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	})
+	existing := &models.Order{
+		OrderID: oid,
+		UserID:  uuid.New(),
+		Status:  "deleted",
+		Payload: json.RawMessage(`{"id":"ext"}`),
+	}
 
-	gotID, gotStatus, err := svc.UpsertOrder(context.Background(), oid.String(), userID, "deleted", json.RawMessage(`{"id":"ext"}`))
-	if err != nil {
-		t.Fatalf("неожиданная ошибка: %v", err)
-	}
-	if gotID != oid.String() || gotStatus != "deleted" {
-		t.Fatalf("ожидали deleted для %s, получили %s/%s", oid.String(), gotID, gotStatus)
-	}
+	s.storage.EXPECT().
+		GetByID(s.ctx, oid).
+		Return(existing, nil)
+
+	gotID, gotStatus, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "", json.RawMessage(`{}`))
+	assert.ErrorIs(s.T(), err, ErrDeletedConflict)
+	assert.Equal(s.T(), oid.String(), gotID)
+	assert.Equal(s.T(), "deleted", gotStatus)
 }
 
-func TestOrdersService_UpsertOrder_DeletedConflict(t *testing.T) {
-	st := newMemStorage()
-	svc := NewOrdersService(st, &stubPublisher{}, nil, 0)
-
-	userID := uuid.New()
+func (s *OrdersServiceUpsertSuite) TestDelete_Success() {
+	svc := s.newSvc(nil, 0)
 	oid := uuid.New()
-	_ = st.Create(context.Background(), &models.Order{
-		OrderID:   oid,
-		UserID:    userID,
-		Status:    "deleted",
-		Payload:   json.RawMessage(`{"id":"ext"}`),
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	})
-
-	_, _, err := svc.UpsertOrder(context.Background(), oid.String(), userID, "", json.RawMessage(`{}`))
-	if err != ErrDeletedConflict {
-		t.Fatalf("ожидали ErrDeletedConflict, получили %v", err)
+	existing := &models.Order{
+		OrderID: oid,
+		UserID:  uuid.New(),
+		Status:  "new",
+		Payload: json.RawMessage(`{"id":"ext"}`),
 	}
+
+	s.storage.EXPECT().
+		GetByID(s.ctx, oid).
+		Return(existing, nil)
+
+	s.storage.EXPECT().
+		DeleteOrder(s.ctx, oid.String()).
+		Return(nil)
+
+	s.pub.EXPECT().
+		Publish(s.ctx, mock.Anything).
+		Return(nil)
+
+	gotID, gotStatus, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "deleted", json.RawMessage(`{}`))
+	assert.NilError(s.T(), err)
+	assert.Equal(s.T(), oid.String(), gotID)
+	assert.Equal(s.T(), "deleted", gotStatus)
 }
 
-func TestOrdersService_UpsertOrder_PublishError(t *testing.T) {
-	st := newMemStorage()
-	pub := &stubPublisher{retErr: errors.New("kafka error")}
-	svc := NewOrdersService(st, pub, nil, 0)
-
-	userID := uuid.New()
-	_, _, err := svc.UpsertOrder(context.Background(), "0", userID, "", json.RawMessage(`{}`))
-	if err == nil {
-		t.Fatalf("ожидали ошибку публикации")
+func (s *OrdersServiceUpsertSuite) TestDelete_StorageError() {
+	svc := s.newSvc(nil, 0)
+	oid := uuid.New()
+	existing := &models.Order{
+		OrderID: oid,
+		UserID:  uuid.New(),
+		Status:  "new",
+		Payload: json.RawMessage(`{"id":"ext"}`),
 	}
+
+	s.storage.EXPECT().
+		GetByID(s.ctx, oid).
+		Return(existing, nil)
+
+	wantErr := errors.New("db error")
+	s.storage.EXPECT().
+		DeleteOrder(s.ctx, oid.String()).
+		Return(wantErr)
+
+	_, _, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "deleted", json.RawMessage(`{}`))
+	assert.ErrorIs(s.T(), err, wantErr)
 }
 
-func TestOrdersService_UpsertOrder_InvalidOrderID(t *testing.T) {
-	st := newMemStorage()
-	svc := NewOrdersService(st, &stubPublisher{}, nil, 0)
-
-	_, _, err := svc.UpsertOrder(context.Background(), "bad-uuid", uuid.New(), "", json.RawMessage(`{}`))
-	if err == nil {
-		t.Fatalf("ожидали ошибку парсинга uuid")
+func (s *OrdersServiceUpsertSuite) TestDelete_PublishError() {
+	svc := s.newSvc(nil, 0)
+	oid := uuid.New()
+	existing := &models.Order{
+		OrderID: oid,
+		UserID:  uuid.New(),
+		Status:  "new",
+		Payload: json.RawMessage(`{"id":"ext"}`),
 	}
+
+	s.storage.EXPECT().
+		GetByID(s.ctx, oid).
+		Return(existing, nil)
+
+	s.storage.EXPECT().
+		DeleteOrder(s.ctx, oid.String()).
+		Return(nil)
+
+	wantErr := errors.New("kafka error")
+	s.pub.EXPECT().
+		Publish(s.ctx, mock.Anything).
+		Return(wantErr)
+
+	_, _, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "deleted", json.RawMessage(`{}`))
+	assert.ErrorIs(s.T(), err, wantErr)
 }
 
-func TestOrdersService_UpsertOrder_WaitAckTimeout(t *testing.T) {
-	st := newMemStorage()
-	reg := NewAckRegistry()
-	// publish успешный, но ACK никогда не придёт
-	pub := &stubPublisher{}
-	svc := NewOrdersService(st, pub, reg, 1*time.Millisecond)
-
-	_, _, err := svc.UpsertOrder(context.Background(), "0", uuid.New(), "", json.RawMessage(`{}`))
-	if err == nil {
-		t.Fatalf("ожидали таймаут ожидания ACK")
+func (s *OrdersServiceUpsertSuite) TestUpdate_Success() {
+	svc := s.newSvc(nil, 0)
+	oid := uuid.New()
+	existing := &models.Order{
+		OrderID: oid,
+		UserID:  uuid.New(),
+		Status:  "new",
+		Payload: json.RawMessage(`{"id":"ext"}`),
 	}
+
+	s.storage.EXPECT().
+		GetByID(s.ctx, oid).
+		Return(existing, nil)
+
+	s.storage.EXPECT().
+		Update(s.ctx, mock.Anything).
+		Return(nil)
+
+	s.pub.EXPECT().
+		Publish(s.ctx, mock.Anything).
+		Return(nil)
+
+	gotID, gotStatus, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "", json.RawMessage(`{"id":"ext","v":1}`))
+	assert.NilError(s.T(), err)
+	assert.Equal(s.T(), oid.String(), gotID)
+	assert.Equal(s.T(), "updated", gotStatus)
+}
+
+func (s *OrdersServiceUpsertSuite) TestUpdate_UpdateError() {
+	svc := s.newSvc(nil, 0)
+	oid := uuid.New()
+	existing := &models.Order{
+		OrderID: oid,
+		UserID:  uuid.New(),
+		Status:  "new",
+		Payload: json.RawMessage(`{"id":"ext"}`),
+	}
+
+	s.storage.EXPECT().
+		GetByID(s.ctx, oid).
+		Return(existing, nil)
+
+	wantErr := errors.New("db error")
+	s.storage.EXPECT().
+		Update(s.ctx, mock.Anything).
+		Return(wantErr)
+
+	_, _, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "", json.RawMessage(`{"id":"ext","v":1}`))
+	assert.ErrorIs(s.T(), err, wantErr)
+}
+
+func (s *OrdersServiceUpsertSuite) TestUpdate_PublishError() {
+	svc := s.newSvc(nil, 0)
+	oid := uuid.New()
+	existing := &models.Order{
+		OrderID: oid,
+		UserID:  uuid.New(),
+		Status:  "new",
+		Payload: json.RawMessage(`{"id":"ext"}`),
+	}
+
+	s.storage.EXPECT().
+		GetByID(s.ctx, oid).
+		Return(existing, nil)
+
+	s.storage.EXPECT().
+		Update(s.ctx, mock.Anything).
+		Return(nil)
+
+	wantErr := errors.New("kafka error")
+	s.pub.EXPECT().
+		Publish(s.ctx, mock.Anything).
+		Return(wantErr)
+
+	_, _, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "", json.RawMessage(`{"id":"ext","v":1}`))
+	assert.ErrorIs(s.T(), err, wantErr)
+}
+
+func TestOrdersServiceUpsertSuite(t *testing.T) {
+	suite.Run(t, new(OrdersServiceUpsertSuite))
 }
 
 

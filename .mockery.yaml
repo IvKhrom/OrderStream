@@ -1,0 +1,12 @@
+packages:
+    github.com/ivkhr/orderstream/internal/services/ordersService:
+        config:
+            dir: "{{.InterfaceDir}}/mocks"
+            filename: "{{.InterfaceName}}.go"
+            outpkg: "mocks"
+        interfaces:
+            OrdersStorage:
+            OrdersEventsPublisher:
+            AckWaitRegistry:
+
+
