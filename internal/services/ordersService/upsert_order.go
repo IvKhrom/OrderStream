@@ -50,6 +50,8 @@ func (s *OrdersService) UpsertOrder(ctx context.Context, orderID string, userID 
 	if err != nil {
 		return "", "", ErrNotFound
 	}
+	// Не в начале, так как первый if проверяем на создание, а если на update
+	// получаем объект в 44-52 строках и сверяем по статусу можем ли мы обновлять 
 	if existing.Status == "deleted" {
 		return existing.OrderID.String(), "deleted", ErrDeletedConflict
 	}
@@ -87,18 +89,18 @@ func (s *OrdersService) publishAndMaybeWaitAck(ctx context.Context, orderID, use
 		Status:     status,
 		Timestamp:  time.Now().UTC(),
 	}
-	evb, _ := json.Marshal(event)
 
 	var (
 		ch      <-chan struct{}
 		cleanup func()
 	)
+	// Подписались на ack раньше публикации, чтобы не пропустить быстрый ответ
 	if s.ackRegistry != nil {
 		ch, cleanup = s.ackRegistry.Register(orderID)
 		defer cleanup()
 	}
-
-	if err := s.eventsPub.Publish(ctx, evb); err != nil {
+	// Публикуем через интерфейс
+	if err := s.eventsPub.PublishOrderEvent(ctx, &event); err != nil {
 		return err
 	}
 

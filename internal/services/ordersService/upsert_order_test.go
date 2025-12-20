@@ -54,7 +54,7 @@ func (s *OrdersServiceUpsertSuite) TestCreate_NoAck_Success() {
 		Return(nil)
 
 	s.pub.EXPECT().
-		Publish(s.ctx, mock.Anything).
+		PublishOrderEvent(s.ctx, mock.Anything).
 		Return(nil)
 
 	gotID, gotStatus, err := svc.UpsertOrder(s.ctx, "0", userID, "", payload)
@@ -83,7 +83,7 @@ func (s *OrdersServiceUpsertSuite) TestCreate_PublishError() {
 
 	wantErr := errors.New("kafka error")
 	s.pub.EXPECT().
-		Publish(s.ctx, mock.Anything).
+		PublishOrderEvent(s.ctx, mock.Anything).
 		Return(wantErr)
 
 	_, _, err := svc.UpsertOrder(s.ctx, "0", uuid.New(), "", json.RawMessage(`{}`))
@@ -104,8 +104,11 @@ func (s *OrdersServiceUpsertSuite) TestCreate_WaitAck_Success() {
 		Return(nil)
 
 	s.pub.EXPECT().
-		Publish(s.ctx, mock.Anything).
-		Run(func(_ context.Context, _ []byte) { ch <- struct{}{} }).
+		PublishOrderEvent(s.ctx, mock.Anything).
+		Run(func(_ context.Context, ev *models.OrderEvent) {
+			_ = ev
+			ch <- struct{}{}
+		}).
 		Return(nil)
 
 	svc := s.newSvc(s.ackReg, 2*time.Second)
@@ -127,7 +130,7 @@ func (s *OrdersServiceUpsertSuite) TestCreate_WaitAck_Timeout() {
 		Return(nil)
 
 	s.pub.EXPECT().
-		Publish(s.ctx, mock.Anything).
+		PublishOrderEvent(s.ctx, mock.Anything).
 		Return(nil)
 
 	svc := s.newSvc(s.ackReg, 5*time.Millisecond)
@@ -150,8 +153,8 @@ func (s *OrdersServiceUpsertSuite) TestCreate_WaitAck_CtxCanceled() {
 		Return(nil)
 
 	s.pub.EXPECT().
-		Publish(mock.Anything, mock.Anything).
-		Run(func(_ context.Context, _ []byte) { cancel() }).
+		PublishOrderEvent(mock.Anything, mock.Anything).
+		Run(func(_ context.Context, _ *models.OrderEvent) { cancel() }).
 		Return(nil)
 
 	svc := s.newSvc(s.ackReg, 2*time.Second)
@@ -216,7 +219,7 @@ func (s *OrdersServiceUpsertSuite) TestDelete_Success() {
 		Return(nil)
 
 	s.pub.EXPECT().
-		Publish(s.ctx, mock.Anything).
+		PublishOrderEvent(s.ctx, mock.Anything).
 		Return(nil)
 
 	gotID, gotStatus, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "deleted", json.RawMessage(`{}`))
@@ -268,7 +271,7 @@ func (s *OrdersServiceUpsertSuite) TestDelete_PublishError() {
 
 	wantErr := errors.New("kafka error")
 	s.pub.EXPECT().
-		Publish(s.ctx, mock.Anything).
+		PublishOrderEvent(s.ctx, mock.Anything).
 		Return(wantErr)
 
 	_, _, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "deleted", json.RawMessage(`{}`))
@@ -294,7 +297,7 @@ func (s *OrdersServiceUpsertSuite) TestUpdate_Success() {
 		Return(nil)
 
 	s.pub.EXPECT().
-		Publish(s.ctx, mock.Anything).
+		PublishOrderEvent(s.ctx, mock.Anything).
 		Return(nil)
 
 	gotID, gotStatus, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "", json.RawMessage(`{"id":"ext","v":1}`))
@@ -346,7 +349,7 @@ func (s *OrdersServiceUpsertSuite) TestUpdate_PublishError() {
 
 	wantErr := errors.New("kafka error")
 	s.pub.EXPECT().
-		Publish(s.ctx, mock.Anything).
+		PublishOrderEvent(s.ctx, mock.Anything).
 		Return(wantErr)
 
 	_, _, err := svc.UpsertOrder(s.ctx, oid.String(), uuid.New(), "", json.RawMessage(`{"id":"ext","v":1}`))

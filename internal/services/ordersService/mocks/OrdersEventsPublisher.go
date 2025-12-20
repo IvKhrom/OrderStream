@@ -5,6 +5,7 @@ package mocks
 import (
 	context "context"
 
+	models "github.com/ivkhr/orderstream/internal/models"
 	mock "github.com/stretchr/testify/mock"
 )
 
@@ -21,17 +22,17 @@ func (_m *MockOrdersEventsPublisher) EXPECT() *MockOrdersEventsPublisher_Expecte
 	return &MockOrdersEventsPublisher_Expecter{mock: &_m.Mock}
 }
 
-// Publish provides a mock function with given fields: ctx, value
-func (_m *MockOrdersEventsPublisher) Publish(ctx context.Context, value []byte) error {
-	ret := _m.Called(ctx, value)
+// PublishOrderEvent provides a mock function with given fields: ctx, event
+func (_m *MockOrdersEventsPublisher) PublishOrderEvent(ctx context.Context, event *models.OrderEvent) error {
+	ret := _m.Called(ctx, event)
 
 	if len(ret) == 0 {
-		panic("no return value specified for Publish")
+		panic("no return value specified for PublishOrderEvent")
 	}
 
 	var r0 error
-	if rf, ok := ret.Get(0).(func(context.Context, []byte) error); ok {
-		r0 = rf(ctx, value)
+	if rf, ok := ret.Get(0).(func(context.Context, *models.OrderEvent) error); ok {
+		r0 = rf(ctx, event)
 	} else {
 		r0 = ret.Error(0)
 	}
@@ -39,31 +40,31 @@ func (_m *MockOrdersEventsPublisher) Publish(ctx context.Context, value []byte) 
 	return r0
 }
 
-// MockOrdersEventsPublisher_Publish_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Publish'
-type MockOrdersEventsPublisher_Publish_Call struct {
+// MockOrdersEventsPublisher_PublishOrderEvent_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PublishOrderEvent'
+type MockOrdersEventsPublisher_PublishOrderEvent_Call struct {
 	*mock.Call
 }
 
-// Publish is a helper method to define mock.On call
+// PublishOrderEvent is a helper method to define mock.On call
 //   - ctx context.Context
-//   - value []byte
-func (_e *MockOrdersEventsPublisher_Expecter) Publish(ctx interface{}, value interface{}) *MockOrdersEventsPublisher_Publish_Call {
-	return &MockOrdersEventsPublisher_Publish_Call{Call: _e.mock.On("Publish", ctx, value)}
+//   - event *models.OrderEvent
+func (_e *MockOrdersEventsPublisher_Expecter) PublishOrderEvent(ctx interface{}, event interface{}) *MockOrdersEventsPublisher_PublishOrderEvent_Call {
+	return &MockOrdersEventsPublisher_PublishOrderEvent_Call{Call: _e.mock.On("PublishOrderEvent", ctx, event)}
 }
 
-func (_c *MockOrdersEventsPublisher_Publish_Call) Run(run func(ctx context.Context, value []byte)) *MockOrdersEventsPublisher_Publish_Call {
+func (_c *MockOrdersEventsPublisher_PublishOrderEvent_Call) Run(run func(ctx context.Context, event *models.OrderEvent)) *MockOrdersEventsPublisher_PublishOrderEvent_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].([]byte))
+		run(args[0].(context.Context), args[1].(*models.OrderEvent))
 	})
 	return _c
 }
 
-func (_c *MockOrdersEventsPublisher_Publish_Call) Return(_a0 error) *MockOrdersEventsPublisher_Publish_Call {
+func (_c *MockOrdersEventsPublisher_PublishOrderEvent_Call) Return(_a0 error) *MockOrdersEventsPublisher_PublishOrderEvent_Call {
 	_c.Call.Return(_a0)
 	return _c
 }
 
-func (_c *MockOrdersEventsPublisher_Publish_Call) RunAndReturn(run func(context.Context, []byte) error) *MockOrdersEventsPublisher_Publish_Call {
+func (_c *MockOrdersEventsPublisher_PublishOrderEvent_Call) RunAndReturn(run func(context.Context, *models.OrderEvent) error) *MockOrdersEventsPublisher_PublishOrderEvent_Call {
 	_c.Call.Return(run)
 	return _c
 }

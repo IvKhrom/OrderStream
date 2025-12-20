@@ -23,7 +23,6 @@ type GetOrderByExternalIDSuite struct {
 func (s *GetOrderByExternalIDSuite) SetupTest() {
 	s.ctx = context.Background()
 	s.storage = mocks.NewMockOrdersStorage(s.T())
-	// Для "get" методов publisher/ackRegistry не нужны.
 	s.svc = NewOrdersService(s.storage, nil, nil, 0)
 }
 
@@ -58,5 +57,3 @@ func (s *GetOrderByExternalIDSuite) TestErr_Propagates() {
 func TestGetOrderByExternalIDSuite(t *testing.T) {
 	suite.Run(t, new(GetOrderByExternalIDSuite))
 }
-
-

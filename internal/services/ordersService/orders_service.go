@@ -19,7 +19,7 @@ type OrdersStorage interface {
 }
 
 type OrdersEventsPublisher interface {
-	Publish(ctx context.Context, value []byte) error
+	PublishOrderEvent(ctx context.Context, event *models.OrderEvent) error
 }
 
 type AckWaitRegistry interface {

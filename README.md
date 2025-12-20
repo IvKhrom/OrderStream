@@ -104,7 +104,6 @@ go test ./... -count=1 -coverprofile=cover.out
 go tool cover -func=cover.out
 ```
 
-Проверка 100% покрытия по конкретным файлам сервисного слоя:
 
 ```powershell
 # собрать профиль покрытия только для пакета сервисного слоя
