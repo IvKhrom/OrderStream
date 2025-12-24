@@ -8,12 +8,15 @@ import (
 	orderseventsconsumer "github.com/ivkhr/orderstream/internal/consumer/orders_events_consumer"
 	ordersackprocessor "github.com/ivkhr/orderstream/internal/services/processors/orders_ack_processor"
 	orderseventprocessor "github.com/ivkhr/orderstream/internal/services/processors/orders_event_processor"
+	"github.com/ivkhr/orderstream/internal/storage/kafkastorage"
 )
 
 func InitOrdersEventsConsumer(cfg *config.Config, processor *orderseventprocessor.OrdersEventProcessor) *orderseventsconsumer.OrdersEventsConsumer {
-	return orderseventsconsumer.NewOrdersEventsConsumer(processor, strings.Split(cfg.KafkaBrokers, ","), cfg.OrdersEventsTopic, cfg.WorkerGroup)
+	rf := kafkastorage.NewKafkaGoReaderFactory()
+	return orderseventsconsumer.NewOrdersEventsConsumer(processor, rf, strings.Split(cfg.KafkaBrokers, ","), cfg.OrdersEventsTopic, cfg.WorkerGroup)
 }
 
 func InitOrdersAckConsumer(cfg *config.Config, processor *ordersackprocessor.OrdersAckProcessor) *ordersackconsumer.OrdersAckConsumer {
-	return ordersackconsumer.NewOrdersAckConsumer(processor, strings.Split(cfg.KafkaBrokers, ","), cfg.OrdersAckTopic, "api-ack-group")
+	rf := kafkastorage.NewKafkaGoReaderFactory()
+	return ordersackconsumer.NewOrdersAckConsumer(processor, rf, strings.Split(cfg.KafkaBrokers, ","), cfg.OrdersAckTopic, "api-ack-group")
 }

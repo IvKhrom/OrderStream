@@ -15,10 +15,10 @@ func main() {
 	}
 
 	pg := bootstrap.InitPGStorage(cfg)
-	ackPublisher := bootstrap.InitOrdersAckPublisher(cfg)
+	ackProducer := bootstrap.InitOrdersAckPublisher(cfg)
 
 	ordersService := bootstrap.InitOrdersService(pg, nil, nil, cfg)
-	eventsProcessor := bootstrap.InitOrdersEventProcessor(ordersService, ackPublisher)
+	eventsProcessor := bootstrap.InitOrdersEventProcessor(ordersService, ackProducer)
 	eventsConsumer := bootstrap.InitOrdersEventsConsumer(cfg, eventsProcessor)
 
 	bootstrap.WorkerRun(eventsConsumer)

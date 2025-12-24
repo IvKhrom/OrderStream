@@ -1,18 +1,15 @@
 package bootstrap
 
 import (
+	"github.com/ivkhr/orderstream/internal/services/ordersService"
 	ordersackprocessor "github.com/ivkhr/orderstream/internal/services/processors/orders_ack_processor"
 	orderseventprocessor "github.com/ivkhr/orderstream/internal/services/processors/orders_event_processor"
-	"github.com/ivkhr/orderstream/internal/services/ordersService"
-	"github.com/ivkhr/orderstream/internal/storage/kafkastorage"
 )
 
-func InitOrdersEventProcessor(ordersService *ordersService.OrdersService, ackPublisher *kafkastorage.Publisher) *orderseventprocessor.OrdersEventProcessor {
-	return orderseventprocessor.NewOrdersEventProcessor(ordersService, ackPublisher)
+func InitOrdersEventProcessor(ordersService *ordersService.OrdersService, ackProducer orderseventprocessor.AckPublisher) *orderseventprocessor.OrdersEventProcessor {
+	return orderseventprocessor.NewOrdersEventProcessor(ordersService, ackProducer)
 }
 
-func InitOrdersAckProcessor(ackRegistry *ordersService.AckRegistry) *ordersackprocessor.OrdersAckProcessor {
-	return ordersackprocessor.NewOrdersAckProcessor(ackRegistry)
+func InitOrdersAckProcessor(notifier ordersService.AckNotifier) *ordersackprocessor.OrdersAckProcessor {
+	return ordersackprocessor.NewOrdersAckProcessor(notifier)
 }
-
-

@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ivkhr/orderstream/internal/models"
+	"github.com/ivkhr/orderstream/internal/storage/kafkastorage"
 )
 
 type eventsProcessor interface {
@@ -12,14 +13,16 @@ type eventsProcessor interface {
 
 type OrdersEventsConsumer struct {
 	processor   eventsProcessor
+	readerFactory kafkastorage.ReaderFactory
 	kafkaBroker []string
 	topicName   string
 	groupID     string
 }
 
-func NewOrdersEventsConsumer(processor eventsProcessor, kafkaBroker []string, topicName, groupID string) *OrdersEventsConsumer {
+func NewOrdersEventsConsumer(processor eventsProcessor, readerFactory kafkastorage.ReaderFactory, kafkaBroker []string, topicName, groupID string) *OrdersEventsConsumer {
 	return &OrdersEventsConsumer{
 		processor:   processor,
+		readerFactory: readerFactory,
 		kafkaBroker: kafkaBroker,
 		topicName:   topicName,
 		groupID:     groupID,

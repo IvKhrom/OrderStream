@@ -26,20 +26,22 @@ type AckWaitRegistry interface {
 	Register(orderID string) (ch <-chan struct{}, cleanup func())
 }
 
+// AckRegistryContract объединяет ожидание ACK (Register) и нотификацию (Notify)
+type AckRegistryContract interface {
+	AckWaitRegistry
+	AckNotifier
+}
+
 type OrdersService struct {
-	storage       OrdersStorage
-	eventsPub     OrdersEventsPublisher
-	ackRegistry   AckWaitRegistry
-	ackWaitTimeout time.Duration
+	storage        OrdersStorage
+	eventsPub      OrdersEventsPublisher
+	ackCoordinator AckCoordinator
 }
 
 func NewOrdersService(storage OrdersStorage, eventsPub OrdersEventsPublisher, ackRegistry AckWaitRegistry, ackWaitTimeout time.Duration) *OrdersService {
 	return &OrdersService{
 		storage:        storage,
 		eventsPub:      eventsPub,
-		ackRegistry:    ackRegistry,
-		ackWaitTimeout: ackWaitTimeout,
+		ackCoordinator: NewAckCoordinator(ackRegistry, ackWaitTimeout),
 	}
 }
-
-

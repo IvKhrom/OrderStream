@@ -4,20 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
-	"time"
 
 	"github.com/ivkhr/orderstream/internal/models"
-	"github.com/segmentio/kafka-go"
 )
 
 func (c *OrdersAckConsumer) Consume(ctx context.Context) {
-	r := kafka.NewReader(kafka.ReaderConfig{
-		Brokers:           c.kafkaBroker,
-		GroupID:           c.groupID,
-		Topic:             c.topicName,
-		HeartbeatInterval: 3 * time.Second,
-		SessionTimeout:    30 * time.Second,
-	})
+	r := c.readerFactory.NewReader(c.kafkaBroker, c.groupID, c.topicName)
 	defer r.Close()
 
 	for {

@@ -2,7 +2,6 @@ package orderseventprocessor
 
 import (
 	"context"
-	"encoding/json"
 
 	"github.com/ivkhr/orderstream/internal/models"
 )
@@ -12,8 +11,7 @@ func (p *OrdersEventProcessor) Handle(ctx context.Context, event *models.OrderEv
 	if err != nil {
 		return err
 	}
-	ackBytes, _ := json.Marshal(ack)
-	return p.ackPublisher.Publish(ctx, ackBytes)
+	return p.ackPublisher.PublishOrderAck(ctx, ack)
 }
 
 
