@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/ivkhr/orderstream/shared/models"
+	"github.com/ivkhr/orderstream/services/worker/internal/models"
 )
 
 func (c *Consumer) Consume(ctx context.Context) {

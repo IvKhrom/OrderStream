@@ -1,23 +1,38 @@
 # OrderStream
 
-Учебный микросервис обработки заказов в event-driven архитектуре:
+Учебный проект в формате **mono-repo** с двумя Go-микросервисами и инфраструктурой (Kafka + Postgres + Redis).
 
-- **API** принимает HTTP-запросы, сохраняет заказ в PostgreSQL и публикует событие в Kafka (`orders.events`)
-- **Worker** читает события из Kafka, обновляет данные в PostgreSQL и публикует ACK в Kafka (`orders.ack`)
-- **API** читает ACK из Kafka и может дождаться подтверждения обработки
+### Архитектура и workflow
 
-## Компоненты
+- **`api_service`** (HTTP):
+  - принимает запросы,
+  - сохраняет **сырые** данные заказа в своей Postgres (`postgres_api`),
+  - публикует событие в Kafka **`orders.events`**,
+  - читает ACK из Kafka **`orders.ack`** и (опционально) ждёт подтверждение,
+  - для “полного результата” читает Redis по ключу `order_result:<order_id>` (результат кладёт worker).
+- **`worker`**:
+  - читает **`orders.events`**,
+  - выполняет обработку/валидацию/upsert по логике из `@internal` (create/update/soft-delete + запрет апдейта удалённого),
+  - пишет данные в свою Postgres (`postgres_worker`),
+  - кладёт **полный результат** в Redis (`order_result:<order_id>`),
+  - публикует ACK в Kafka **`orders.ack`**.
 
-- **API**: `cmd/api_service`
-- **Worker**: `cmd/worker`
-- **Контракт API**: `api/orders_api/orders.proto`
-- **API реализация**: `internal/api/orders_service_api`
-- **Сервисный слой**: `internal/services/ordersService`
-- **PostgreSQL storage**: `internal/storage/pgstorage`
-- **Kafka publisher**: `internal/storage/kafkastorage`
-- **Миграции**: `migrations`
+### Структура репозитория
 
-## Быстрый старт (Docker Compose)
+- **Go workspace**: `go.work` (подключает два модуля)
+- **`services/api_service/`**: модуль API сервиса
+  - `services/api_service/api/` — `.proto` контракт
+  - `services/api_service/cmd/api_service/` — точка входа (`main.go`)
+  - `services/api_service/config/` — env-config
+  - `services/api_service/internal/` — bootstrap/api/services/storage/pb
+- **`services/worker/`**: модуль воркера
+  - `services/worker/cmd/worker/` — точка входа (`main.go`)
+  - `services/worker/config/` — env-config
+  - `services/worker/internal/` — bootstrap/consumer/services/storage/models
+- **`migrations/`** — SQL миграции (используются обоими Postgres в docker-compose)
+- **`docker-compose.yml`** — инфраструктура + оба сервиса
+
+### Быстрый старт (Docker Compose)
 
 Поднять инфраструктуру и сервисы:
 
@@ -26,58 +41,88 @@ docker compose up -d --build
 ```
 
 Что откроется:
-
 - **API**: `http://localhost:8080`
+- **Swagger UI**: `http://localhost:8080/docs`
 - **Kafka UI**: `http://localhost:8081`
-- **Postgres UI (Adminer)**: `http://localhost:8082`
+- **Adminer**: `http://localhost:8082`
+- **Redis UI (RedisInsight)**: `http://localhost:5540`
 
-Если нужно пересоздать Postgres “с нуля” (volume + миграции):
+### Redis UI (RedisInsight):
+
+Открой `http://localhost:5540` → **Add Redis database** и укажи:
+- **Host**: `redis`
+- **Port**: `6379`
+- **Username/Password**: пусто (у нас Redis без пароля)
+
+После подключения ключи результата обработки лежат в Redis по шаблону:
+- `order_result:<order_id>`
+
+Сбросить Postgres volume’ы и применить миграции заново:
 
 ```powershell
 docker compose down -v
 docker compose up -d --build
 ```
 
-## Переменные окружения
+### Переменные окружения
 
-Загрузка переменных описана в `config/config.go`. Основные:
+Значения и дефолты см. в:
+- `services/api_service/config/config.go`
+- `services/worker/config/config.go`
 
-- `POSTGRES_DSN`
-- `KAFKA_BROKERS`
-- `API_PORT`
-- `WORKER_GROUP`
+Основные:
+- **API**
+  - `API_POSTGRES_DSN` (default: `postgres://postgres:upvel123@localhost:5433/orderstream_api?sslmode=disable`)
+  - `API_PORT` (default: `8080`)
+  - `KAFKA_BROKERS` (default: `localhost:29092`)
+  - `REDIS_ADDR` (default: `localhost:6379`)
+  - `ORDERS_EVENTS_TOPIC` (default: `orders.events`)
+  - `ORDERS_ACK_TOPIC` (default: `orders.ack`)
+- **Worker**
+  - `WORKER_POSTGRES_DSN` (default: `postgres://postgres:upvel123@localhost:5434/orderstream_worker?sslmode=disable`)
+  - `WORKER_GROUP` (default: `order-workers`)
+  - `KAFKA_BROKERS`, `REDIS_ADDR`, `ORDERS_EVENTS_TOPIC`, `ORDERS_ACK_TOPIC` — аналогично
 
-## HTTP API
+### HTTP API
 
-- `GET /health` → `{ "status": "ok" }`
+- **Health**: `GET /health` → `{ "status": "ok" }`
 
-- `POST /orders` — создать/обновить/soft-delete.
-  - Создание: `order_id` пустой или `"0"`
-  - Soft-delete: `"status": "deleted"`
-  - `payload` можно передавать объектом — сервер сам сериализует в строку `payload_json`
+- **Upsert**: `POST /orders`
+  - create: `order_id` пустой или `"0"`
+  - soft-delete: `"status": "deleted"`
+  - payload можно передавать:
+    - как `payload_json` (сырое json),
+    - или как `payload` (объект) — сервер сам сериализует.
 
-- `GET /orders/{order_id}` — получить заказ по внутреннему UUID
-- `GET /orders/by-external/{external_id}?user_id=<uuid>` — поиск по внешнему id (берётся из `payload->>'id'`)
+- **Get by id**: `GET /orders/{order_id}`
+- **Get by external id**: `GET /orders/by-external/{external_id}?user_id=<uuid>`
+  - `external_id` берётся из `payload.id` (в Postgres это запрос вида `payload->>'id'`).
+  - если worker уже обработал заказ, API подмешивает “полный результат” из Redis.
 
-## Топики Kafka
+### Kafka topics
 
-- `orders.events` — события заказов от API к Worker
-- `orders.ack` — подтверждения (ACK) от Worker к API
+- **`orders.events`**: API → Worker
+- **`orders.ack`**: Worker → API
 
-## Проверка данных в Postgres (Adminer)
+### Проверка данных в Postgres (Adminer)
 
 Adminer: `http://localhost:8082`
 
-- System: `PostgreSQL`
-- Server: `postgres`
-- Username: `postgres`
-- Password: `upvel123`
-- Database: `orderstream`
+- **Для API DB**
+  - Server: `postgres_api` (внутри docker-compose сети)
+  - Database: `orderstream_api`
+- **Для Worker DB**
+  - Server: `postgres_worker`
+  - Database: `orderstream_worker`
+- Username/Password: `postgres` / `upvel123`
 
 
-## Тесты, моки, покрытие
+### Тесты, моки, покрытие
 
-Моки генерируются `mockery` по конфигу `.mockery.yaml` и лежат в `internal/services/ordersService/mocks`.
+#### Worker: suite-тесты с mockery-style моками
+
+- Моки генерируются `mockery` по `.mockery.yaml` и лежат рядом с интерфейсами:
+  - `services/worker/internal/services/worker/mocks/`
 
 Установить mockery:
 
@@ -88,52 +133,19 @@ go install github.com/vektra/mockery/v2@latest
 Сгенерировать моки:
 
 ```powershell
-make mock
+mockery
 ```
 
-Запуск тестов:
+Запуск тестов (из корня репозитория, где лежит `go.work`):
 
 ```powershell
 go test ./... -count=1
 ```
 
-Покрытие:
+Покрытие для worker (пример):
 
 ```powershell
-go test ./... -count=1 -coverprofile=cover.out
-go tool cover -func=cover.out
-```
-
-
-```powershell
-# собрать профиль покрытия только для пакета сервисного слоя
-go test ./internal/services/ordersService -count=1 -coverprofile=cover
-
-# вывести процент по файлу upsert_order.go
+go test ./internal/services/worker -count=1 -coverprofile=cover
 go tool cover -func cover > cover.func.txt
-Select-String -Path cover.func.txt -Pattern "internal/services/ordersService/upsert_order.go" -SimpleMatch
-
-# вывести процент по файлу get_order_by_external_id.go
-Select-String -Path cover.func.txt -Pattern "internal/services/ordersService/get_order_by_external_id.go" -SimpleMatch
+Select-String -Path cover.func.txt -Pattern "internal/services/worker/handle_order_event.go" -SimpleMatch
 ```
-
-## Swagger / OpenAPI
-
-Swagger генерируется **из proto** (см. `api/orders_api/orders.proto`) через `protoc-gen-openapiv2`.
-Сгенерированный файл кладётся в слой API и встраивается в бинарник:
-
-- `internal/api/swagger/orders.swagger.json`
-
-Запустить генерацию:
-
-```powershell
-make swagger
-
-# вариант 2: PowerShell-скрипт
-./scripts/gen_swagger.ps1
-```
-
-После запуска API:
-
-- `http://localhost:8080/docs` — Swagger UI
-- `http://localhost:8080/swagger.json` — сырой OpenAPI JSON

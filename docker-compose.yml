@@ -1,3 +1,5 @@
+name: orderstream
+
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
@@ -40,14 +42,18 @@ services:
     ports:
       - "6379:6379"
 
+  redis-ui:
+    image: redis/redisinsight:latest
+    depends_on: [redis]
+    ports:
+      - "5540:5540"
+
   postgres_api:
     image: postgres:15
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: upvel123
       POSTGRES_DB: orderstream_api
-    ports:
-      - "5433:5432"
     volumes:
       - pgdata_api:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d:ro
@@ -58,8 +64,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: upvel123
       POSTGRES_DB: orderstream_worker
-    ports:
-      - "5434:5432"
     volumes:
       - pgdata_worker:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d:ro

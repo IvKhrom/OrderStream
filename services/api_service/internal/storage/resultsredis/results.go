@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ivkhr/orderstream/shared/models"
-	"github.com/ivkhr/orderstream/shared/storage/redisstorage"
+	"github.com/ivkhr/orderstream/services/api_service/internal/models"
+	"github.com/ivkhr/orderstream/services/api_service/internal/storage/redisstorage"
 )
 
 type Storage struct {
@@ -27,6 +27,15 @@ func (s *Storage) GetOrderAck(ctx context.Context, orderID string) (*models.Orde
 		return nil, ok, err
 	}
 	return &ack, true, nil
+}
+
+func (s *Storage) GetOrderResult(ctx context.Context, orderID string) (*models.OrderResult, bool, error) {
+	var res models.OrderResult
+	ok, err := s.rs.GetJSON(ctx, key(orderID), &res)
+	if err != nil || !ok {
+		return nil, ok, err
+	}
+	return &res, true, nil
 }
 
 

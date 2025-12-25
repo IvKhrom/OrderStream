@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package orders.service.v1;
 
-option go_package = "github.com/ivkhr/orderstream/internal/pb/orders_api";
+option go_package = "github.com/ivkhr/orderstream/services/api_service/internal/pb/orders_api";
 
 import "models/order_model.proto";
 import "google/api/annotations.proto";

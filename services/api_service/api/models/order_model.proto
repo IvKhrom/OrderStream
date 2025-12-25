@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package orders.models.v1;
 
-option go_package = "github.com/ivkhr/orderstream/internal/pb/models";
+option go_package = "github.com/ivkhr/orderstream/services/api_service/internal/pb/models";
 
 message OrderModel {
   string order_id = 1; // uuid

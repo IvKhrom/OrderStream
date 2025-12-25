@@ -1,12 +1,13 @@
-FROM golang:1.23.4-alpine AS build
+FROM golang:1.24.11-alpine AS build
 WORKDIR /app
 
 ARG GOPROXY=https://proxy.golang.org,direct
 ENV GOPROXY=$GOPROXY
 
 COPY go.work /app/go.work
-COPY shared/go.mod shared/go.mod
+COPY go.mod /app/go.mod
 COPY services/worker/go.mod services/worker/go.mod
+COPY services/api_service/go.mod services/api_service/go.mod
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \

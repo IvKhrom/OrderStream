@@ -8,5 +8,12 @@ packages:
             OrdersStorage:
             OrdersEventsPublisher:
             AckWaitRegistry:
+    github.com/ivkhr/orderstream/services/worker/internal/services/worker:
+        config:
+            dir: "{{.InterfaceDir}}/mocks"
+            filename: "{{.InterfaceName}}.go"
+            outpkg: "mocks"
+        interfaces:
+            Storage:
 
 

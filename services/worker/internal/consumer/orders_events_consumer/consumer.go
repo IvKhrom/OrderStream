@@ -3,8 +3,8 @@ package orderseventsconsumer
 import (
 	"context"
 
-	"github.com/ivkhr/orderstream/shared/models"
-	"github.com/ivkhr/orderstream/shared/storage/kafkastorage"
+	"github.com/ivkhr/orderstream/services/worker/internal/models"
+	"github.com/ivkhr/orderstream/services/worker/internal/storage/kafkastorage"
 )
 
 type Processor interface {

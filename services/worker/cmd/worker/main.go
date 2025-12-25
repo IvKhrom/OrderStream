@@ -2,18 +2,11 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
-	"github.com/ivkhr/orderstream/shared/storage/kafkastorage"
-	"github.com/ivkhr/orderstream/shared/storage/pgstorage"
-	"github.com/ivkhr/orderstream/shared/storage/redisstorage"
+	"github.com/ivkhr/orderstream/services/worker/config"
 	"github.com/ivkhr/orderstream/services/worker/internal/bootstrap"
-	"github.com/ivkhr/orderstream/services/worker/internal/config"
-	orderseventsconsumer "github.com/ivkhr/orderstream/services/worker/internal/consumer/orders_events_consumer"
-	orderseventprocessor "github.com/ivkhr/orderstream/services/worker/internal/processors/orders_event_processor"
-	"github.com/ivkhr/orderstream/services/worker/internal/services/orders"
-	"github.com/ivkhr/orderstream/services/worker/internal/storage/resultsredis"
+	workersvc "github.com/ivkhr/orderstream/services/worker/internal/services/worker"
 )
 
 func main() {
@@ -22,21 +15,18 @@ func main() {
 		panic(fmt.Sprintf("config error: %v", err))
 	}
 
-	pg, err := pgstorage.NewPGStorge(cfg.PostgresDSN)
+	pg, err := bootstrap.InitPGStorage(cfg)
 	if err != nil {
 		panic(err)
 	}
 
-	ackPub := kafkastorage.NewPublisher(strings.Split(cfg.KafkaBrokers, ","), cfg.OrdersAckTopic)
+	redis := bootstrap.InitRedis(cfg.RedisAddr)
+	results := bootstrap.InitResultWriter(redis, 10*time.Minute)
+	ackPublisher := bootstrap.InitAckPublisher(cfg)
 
-	rs := redisstorage.New(cfg.RedisAddr)
-	results := resultsredis.New(rs, 10*time.Minute)
+	svc := workersvc.New(pg)
+	proc := bootstrap.InitOrdersEventProcessor(svc, results, ackPublisher)
+	cons := bootstrap.InitOrdersEventsConsumer(cfg, proc)
 
-	svc := orders.New(pg)
-	proc := orderseventprocessor.New(svc, results, ackPub)
-
-	cons := orderseventsconsumer.New(proc, kafkastorage.NewKafkaGoReaderFactory(), strings.Split(cfg.KafkaBrokers, ","), cfg.OrdersEventsTopic, cfg.WorkerGroup)
 	bootstrap.Run(cons)
 }
-
-

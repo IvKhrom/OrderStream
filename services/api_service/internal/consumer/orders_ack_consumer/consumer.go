@@ -3,8 +3,8 @@ package ordersackconsumer
 import (
 	"context"
 
-	"github.com/ivkhr/orderstream/shared/models"
-	"github.com/ivkhr/orderstream/shared/storage/kafkastorage"
+	"github.com/ivkhr/orderstream/services/api_service/internal/models"
+	"github.com/ivkhr/orderstream/services/api_service/internal/storage/kafkastorage"
 )
 
 type Processor interface {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ivkhr/orderstream/shared/models"
-	"github.com/ivkhr/orderstream/shared/storage/redisstorage"
+	"github.com/ivkhr/orderstream/services/worker/internal/models"
+	"github.com/ivkhr/orderstream/services/worker/internal/storage/redisstorage"
 )
 
 type Storage struct {
@@ -22,8 +22,6 @@ func key(orderID string) string {
 	return fmt.Sprintf("order_result:%s", orderID)
 }
 
-func (s *Storage) SetOrderAck(ctx context.Context, ack *models.OrderAck) error {
-	return s.rs.SetJSON(ctx, key(ack.OrderID), ack, s.ttl)
+func (s *Storage) SetOrderResult(ctx context.Context, res *models.OrderResult) error {
+	return s.rs.SetJSON(ctx, key(res.OrderID), res, s.ttl)
 }
-
-
