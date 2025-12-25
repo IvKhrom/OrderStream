@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	server "github.com/ivkhr/orderstream/internal/api/orders_service_api"
+	"github.com/ivkhr/orderstream/internal/api/swagger"
 	ordersackconsumer "github.com/ivkhr/orderstream/internal/consumer/orders_ack_consumer"
 	"github.com/ivkhr/orderstream/internal/pb/orders_api"
 
@@ -43,6 +44,9 @@ func runGRPCServer(api server.OrdersServiceAPI) error {
 
 func runHTTPServer(api server.OrdersServiceAPI, httpPort string) error {
 	r := chi.NewRouter()
+
+	sw := swagger.NewHTTP(swagger.NewEmbeddedProvider())
+	sw.Register(r)
 
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		resp, err := (&api).Health(r.Context(), &orders_api.HealthRequest{})

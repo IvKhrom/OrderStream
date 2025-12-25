@@ -4,18 +4,23 @@ WORKDIR /app
 ARG GOPROXY=https://proxy.golang.org,direct
 ENV GOPROXY=$GOPROXY
 
-COPY go.mod go.sum /app/
+COPY go.work /app/go.work
+COPY shared/go.mod shared/go.mod
+COPY services/worker/go.mod services/worker/go.mod
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    go mod download
+    cd services/worker && go mod download
 
 COPY . /app
+
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    cd cmd/worker && CGO_ENABLED=0 GOOS=linux go build -o /orderstream-worker .
+    cd services/worker/cmd/worker && CGO_ENABLED=0 GOOS=linux go build -o /worker-service .
 
 FROM alpine:3.18
 RUN apk add --no-cache ca-certificates
-COPY --from=build /orderstream-worker /usr/local/bin/orderstream-worker
-ENTRYPOINT ["/usr/local/bin/orderstream-worker"]
+COPY --from=build /worker-service /usr/local/bin/worker-service
+ENTRYPOINT ["/usr/local/bin/worker-service"]
+
+

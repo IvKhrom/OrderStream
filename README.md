@@ -116,3 +116,24 @@ Select-String -Path cover.func.txt -Pattern "internal/services/ordersService/ups
 # вывести процент по файлу get_order_by_external_id.go
 Select-String -Path cover.func.txt -Pattern "internal/services/ordersService/get_order_by_external_id.go" -SimpleMatch
 ```
+
+## Swagger / OpenAPI
+
+Swagger генерируется **из proto** (см. `api/orders_api/orders.proto`) через `protoc-gen-openapiv2`.
+Сгенерированный файл кладётся в слой API и встраивается в бинарник:
+
+- `internal/api/swagger/orders.swagger.json`
+
+Запустить генерацию:
+
+```powershell
+make swagger
+
+# вариант 2: PowerShell-скрипт
+./scripts/gen_swagger.ps1
+```
+
+После запуска API:
+
+- `http://localhost:8080/docs` — Swagger UI
+- `http://localhost:8080/swagger.json` — сырой OpenAPI JSON
